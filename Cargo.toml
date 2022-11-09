@@ -2,7 +2,11 @@
 name = "entropy_example_contract"
 version = "1.0.0"
 authors = ["Amit Prasad <mail@amitprasad.dev>"]
-edition = "2018"
+edition = "2021"
+repository = "https://github.com/EntropicLabs/entropy_example_contract"
+description = "Entropy Example Contract"
+license = "Apache-2.0"
+readme = "README.md"
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
@@ -45,8 +49,8 @@ cw-storage-plus = "0.13.2"
 cw2 = "0.13.2"
 schemars = "0.8.8"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
-thiserror = { version = "1.0.31" }
-entropy_beacon_cosmos = { path = "../../packages/entropy_beacon_cosmos_external" }
+thiserror = "1.0.31"
+entropy_beacon_cosmos = "2.0.0"
 
 [dev-dependencies]
 cosmwasm-schema = "1.0.0"

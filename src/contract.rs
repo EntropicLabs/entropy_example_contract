@@ -1,23 +1,23 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, StdResult,
-    Uint128, WasmQuery,
+    from_binary, Binary, Coin, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 
-use entropy_beacon_cosmos::{
-    calculate_gas_cost, BeaconConfigQuery, BeaconConfigResponse, BeaconQueryMsg, EntropyRequest,
-};
+use entropy_beacon_cosmos::beacon::CalculateFeeQuery;
+use entropy_beacon_cosmos::EntropyRequest;
 
 use crate::error::ContractError;
 use crate::msg::{EntropyCallbackData, ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 use crate::state::{State, STATE};
 
 // version info for migration info
-const CONTRACT_NAME: &str = "crates.io:coinflip";
+const CONTRACT_NAME: &str = "entropiclabs/example-entropy-consumer";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Our [`InstantiateMsg`] contains the address of the entropy beacon contract.
+/// We save this address in the contract state.
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
@@ -46,35 +46,33 @@ pub fn execute(
         ExecuteMsg::Coinflip {} => {
             let state = STATE.load(deps.storage)?;
             let beacon_addr = state.entropy_beacon_addr;
+            // Note: In production you should check the denomination of the funds to make sure it matches the native token of the chain.
             let sent_amount: Uint128 = info.funds.iter().map(|c| c.amount).sum();
 
-            let beacon_config =
-                deps.querier
-                    .query::<BeaconConfigResponse>(&cosmwasm_std::QueryRequest::Wasm(
-                        WasmQuery::Smart {
-                            contract_addr: beacon_addr.to_string(),
-                            msg: to_binary(&BeaconQueryMsg::BeaconConfig(BeaconConfigQuery {}))?,
-                        },
-                    ))?;
+            // How much gas our callback will use. This is an educated guess, so we usually want to overestimate.
+            // IF YOU ARE USING THIS CONTRACT AS A TEMPLATE, YOU SHOULD CHANGE THIS VALUE TO MATCH YOUR CONTRACT.
+            // If you set this too low, your contract will fail when receiving entropy, and the request will NOT be retried.
+            let callback_gas_limit = 100_000u64;
 
-            let beacon_protocol_fee = beacon_config.protocol_fee;
-            let callback_gas = 100_000u64;
-            let beacon_total_fee =
-                Uint128::from(beacon_protocol_fee) + calculate_gas_cost(callback_gas);
+            // The beacon allows us to query the fee it will charge for a request, given the gas limit we provide.
+            let beacon_fee =
+                CalculateFeeQuery::query(deps.as_ref(), callback_gas_limit, beacon_addr.clone())?;
 
-            if sent_amount < beacon_total_fee {
+            // Check if the user sent enough funds to cover the fee.
+            if sent_amount < Uint128::from(beacon_fee) {
                 return Err(ContractError::InsufficientFunds {});
             }
 
             Ok(Response::new().add_message(
                 EntropyRequest {
-                    callback_gas_limit: callback_gas, // 0.05 Luna callback gas limit
+                    callback_gas_limit,
                     callback_address: env.contract.address,
                     funds: vec![Coin {
-                        denom: "uluna".to_string(),
-                        amount: beacon_total_fee,
+                        denom: "uluna".to_string(), // Change this to match your chain's native token.
+                        amount: Uint128::from(beacon_fee),
                     }],
                     // A custom struct and data we define for callback info.
+                    // If you are using this contract as a template, you should change this to match the information your contract needs.
                     callback_msg: EntropyCallbackData {
                         original_sender: info.sender,
                     },
